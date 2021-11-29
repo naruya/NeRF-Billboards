@@ -162,6 +162,9 @@ def define_flags():
     flags.DEFINE_float("lr_init", 5e-4, "The initial learning rate.")
     flags.DEFINE_float("lr_final", 5e-6, "The final learning rate.")
     flags.DEFINE_integer(
+        "lr_max_steps", 1000000, "the number of optimization steps."
+        "It is recommended not to change this value for a fair comparison")
+    flags.DEFINE_integer(
         "lr_delay_steps",
         0,
         "The number of steps at the beginning of "

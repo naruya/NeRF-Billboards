@@ -155,7 +155,7 @@ def main(unused_argv):
         utils.learning_rate_decay,
         lr_init=FLAGS.lr_init,
         lr_final=FLAGS.lr_final,
-        max_steps=FLAGS.max_steps,
+        max_steps=FLAGS.lr_max_steps,
         lr_delay_steps=FLAGS.lr_delay_steps,
         lr_delay_mult=FLAGS.lr_delay_mult,
     )
