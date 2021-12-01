@@ -42,6 +42,14 @@ FLAGS = flags.FLAGS
 utils.define_flags()
 
 
+def render_fn(model, voxel, len_inpc, len_inpf, variables, key_0, key_1, rays):
+    # Rendering is forced to be deterministic even if training was randomized, as
+    # this eliminates "speckle" artifacts.
+    return jax.lax.all_gather(
+        model.apply(variables, key_0, key_1, rays, voxel, len_inpc, len_inpf, False)[0],
+        axis_name="batch")
+
+
 def main(unused_argv):
     rng = random.PRNGKey(20200823)
     rng, key = random.split(rng)
@@ -52,9 +60,21 @@ def main(unused_argv):
     dataset = datasets.get_dataset("test", FLAGS)
     model, state = models.get_model_state(key, FLAGS, restore=False)
 
+    if not FLAGS.voxel_dir == "":
+        voxel = device_put(jnp.load(path.join(FLAGS.voxel_dir, "voxel.npy")))
+        with open(path.join(FLAGS.train_dir, "len_inp.txt"), 'r') as f:
+            FLAGS.len_inpc, FLAGS.len_inpf = map(int, f.readline().split())
+    else:
+        voxel = None
+
     # Rendering is forced to be deterministic even if training was randomized, as
     # this eliminates "speckle" artifacts.
-    render_pfn = utils.get_render_pfn(model, randomized=False)
+    render_pfn = jax.pmap(
+        functools.partial(render_fn, model, voxel, FLAGS.len_inpc*2, FLAGS.len_inpf*2),
+        axis_name="batch",
+        in_axes=(None, None, None, 0),
+        donate_argnums=(3,),
+    )
 
     # Compiling to the CPU because it's faster and more accurate.
     ssim_fn = jax.jit(functools.partial(utils.compute_ssim, max_val=1.0), backend="cpu")

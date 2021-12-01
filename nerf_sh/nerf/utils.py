@@ -48,6 +48,8 @@ class Stats:
     psnr_c: float
     weight_l2: float
     loss_sp: float
+    len_c: int
+    len_f: int
 
 
 Rays = collections.namedtuple("Rays", ("origins", "directions", "viewdirs"))
@@ -80,6 +82,8 @@ def define_flags():
         True,
         "using white color as default background." "(used in the blender dataset only)",
     )
+    flags.DEFINE_bool(
+        "alpha_bkgd", False, "If True, dataset contains rgba image")
     flags.DEFINE_integer(
         "batch_size", 1024, "the number of rays in a mini-batch (for training)."
     )
@@ -124,12 +128,10 @@ def define_flags():
     )
     flags.DEFINE_integer("deg_view", 4, "Degree of positional encoding for viewdirs.")
     flags.DEFINE_integer(
-        "num_coarse_samples",
-        64,
-        "the number of samples on each ray for the coarse model.",
+        "num_coarse_samples", 1, "the number of samples on each ray for the coarse model.",
     )
     flags.DEFINE_integer(
-        "num_fine_samples", 128, "the number of samples on each ray for the fine model."
+        "num_fine_samples", 1, "the number of samples on each ray for the fine model."
     )
     flags.DEFINE_bool("use_viewdirs", True, "use view directions as a condition.")
     flags.DEFINE_integer("sh_deg", -1, "set to use SH output up to given degree, -1 = disable.")
@@ -161,6 +163,7 @@ def define_flags():
     # Train Flags
     flags.DEFINE_float("lr_init", 5e-4, "The initial learning rate.")
     flags.DEFINE_float("lr_final", 5e-6, "The final learning rate.")
+    flags.DEFINE_bool("small_lr_at_first", False, "use small learning rate at first few steps")
     flags.DEFINE_integer(
         "lr_max_steps", 1000000, "the number of optimization steps."
         "It is recommended not to change this value for a fair comparison")
@@ -184,7 +187,7 @@ def define_flags():
     )
     flags.DEFINE_integer(
         "render_every",
-        20000,
+        10000,
         "the number of steps to render a test image,"
         "better to be x00 for accurate step time record.",
     )
@@ -215,7 +218,7 @@ def define_flags():
     # Eval Flags
     flags.DEFINE_bool(
         "eval_once",
-        True,
+        False,
         "evaluate the model only once if true, otherwise keeping evaluating new"
         "checkpoints if there's any.",
     )
@@ -231,6 +234,9 @@ def define_flags():
         1,
         "Evaluates only every x images, to allow calculating approximate metric values",
     )
+    flags.DEFINE_integer("len_inpc", 0, "input size of MLP for train")
+    flags.DEFINE_integer("len_inpf", 0, "input size of MLP for train")
+    flags.DEFINE_string("voxel_dir", "", "voxel data directory")
 
 
 def update_flags(args):
@@ -348,7 +354,8 @@ def render_image(render_fn, rays, rng, normalize_disp, chunk=8192):
     """
     height, width = rays[0].shape[:2]
     num_rays = height * width
-    rays = namedtuple_map(lambda r: r.reshape((num_rays, -1)), rays)
+    ind = np.random.permutation(np.arange(num_rays))
+    rays = namedtuple_map(lambda r: r.reshape((num_rays, -1))[ind], rays)
 
     unused_rng, key_0, key_1 = jax.random.split(rng, 3)
     host_id = jax.host_id()
@@ -374,6 +381,8 @@ def render_image(render_fn, rays, rng, normalize_disp, chunk=8192):
         results.append([unshard(x[0], padding) for x in chunk_results])
         # pylint: enable=cell-var-from-loop
     rgb, disp, acc = [jnp.concatenate(r, axis=0) for r in zip(*results)]
+    ind = jnp.argsort(ind)
+    rgb, disp, acc = [jnp.concatenate(r, axis=0)[ind] for r in zip(*results)]
     # Normalize disp for visualization for ndc_rays in llff front-facing scenes.
     if normalize_disp:
         disp = (disp - disp.min()) / (disp.max() - disp.min())
@@ -701,19 +710,19 @@ def viewmatrix(z, up, pos):
     return m
 
 
-def get_render_pfn(model, randomized):
-    def render_fn(variables, key_0, key_1, rays):
-        return jax.lax.all_gather(
-            model.apply(variables, key_0, key_1, rays, randomized),
-            axis_name="batch",
-        )
+# def get_render_pfn(model, randomized):
+#     def render_fn(variables, key_0, key_1, rays):
+#         return jax.lax.all_gather(
+#             model.apply(variables, key_0, key_1, rays, randomized),
+#             axis_name="batch",
+#         )
 
-    return jax.pmap(
-        render_fn,
-        in_axes=(None, None, None, 0),  # Only distribute the data input.
-        donate_argnums=(3,),
-        axis_name="batch",
-    )
+#     return jax.pmap(
+#         render_fn,
+#         in_axes=(None, None, None, 0),  # Only distribute the data input.
+#         donate_argnums=(3,),
+#         axis_name="batch",
+#     )
 
 
 def get_eval_points_pfn(model, raw_rgb, coarse=False):

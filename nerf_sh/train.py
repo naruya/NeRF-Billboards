@@ -33,8 +33,11 @@ from flax.training import checkpoints
 import jax
 from jax import config
 from jax import random
+from jax import device_put
 import jax.numpy as jnp
 import numpy as np
+import os
+from multiprocessing import Process
 
 
 from nerf_sh.nerf import datasets
@@ -48,7 +51,7 @@ utils.define_flags()
 config.parse_flags_with_absl()
 
 
-def train_step(model, rng, state, batch, lr):
+def train_step(model, voxel, len_inpc, len_inpf, rng, state, batch, lr):
     """One optimization step.
 
     Args:
@@ -67,7 +70,7 @@ def train_step(model, rng, state, batch, lr):
 
     def loss_fn(variables):
         rays = batch["rays"]
-        ret = model.apply(variables, key_0, key_1, rays, FLAGS.randomized)
+        ret, aux = model.apply(variables, key_0, key_1, rays, voxel, len_inpc, len_inpf, FLAGS.randomized)
         if len(ret) not in (1, 2):
             raise ValueError(
                 "ret should contain either 1 set of output (coarse only), or 2 sets"
@@ -77,6 +80,9 @@ def train_step(model, rng, state, batch, lr):
         if FLAGS.sparsity_weight > 0.0:
             rng, key = random.split(key_2)
             sp_points = random.uniform(key, (FLAGS.sparsity_npoints, 3), minval=-FLAGS.sparsity_radius, maxval=FLAGS.sparsity_radius)
+            # It's better to use sigma calculated in rgb_loss forwarding.
+            # if not FLAGS.voxel_dir == "":
+            #     pass
             sp_rgb, sp_sigma = model.apply(variables, sp_points, method=model.eval_points_raw)
             del sp_rgb
             sp_sigma = nn.relu(sp_sigma)
@@ -109,7 +115,8 @@ def train_step(model, rng, state, batch, lr):
 
         stats = utils.Stats(
             loss=loss, psnr=psnr, loss_c=loss_c, loss_sp=loss_sp,
-            psnr_c=psnr_c, weight_l2=weight_l2
+            psnr_c=psnr_c, weight_l2=weight_l2,
+            len_c=aux[0], len_f=aux[1]
         )
         return loss + loss_c + loss_sp + FLAGS.weight_decay_mult * weight_l2, stats
 
@@ -121,7 +128,13 @@ def train_step(model, rng, state, batch, lr):
     return new_state, stats, rng
 
 
-def main(unused_argv):
+def render_fn(model, voxel, len_inpc, len_inpf, variables, key_0, key_1, rays):
+    return jax.lax.all_gather(
+        model.apply(variables, key_0, key_1, rays, voxel, len_inpc, len_inpf, FLAGS.randomized)[0],
+        axis_name="batch",
+    )
+
+def train(max_steps, check=False):
     rng = random.PRNGKey(20200823)
     # Shift the numpy random seed by host_id() to shuffle data loaded by different
     # hosts.
@@ -151,6 +164,15 @@ def main(unused_argv):
     h0print('* Load model')
     model, state = models.get_model_state(key, FLAGS)
 
+    ### Vax
+    voxel, len_c, len_f = None, FLAGS.len_inpc, FLAGS.len_inpf
+    if not FLAGS.voxel_dir == "":
+        voxel = device_put(jnp.load(os.path.join(FLAGS.voxel_dir, "voxel.npy")))
+        if os.path.exists(os.path.join(FLAGS.train_dir, "len_inp.txt")):
+            with open(os.path.join(FLAGS.train_dir, "len_inp.txt"), 'r') as f:
+                len_c, len_f = map(int, f.readline().split())
+                FLAGS.len_inpc, FLAGS.len_inpf = int(len_c*1.2), int(len_f*1.2)
+
     learning_rate_fn = functools.partial(
         utils.learning_rate_decay,
         lr_init=FLAGS.lr_init,
@@ -161,13 +183,18 @@ def main(unused_argv):
     )
 
     train_pstep = jax.pmap(
-        functools.partial(train_step, model),
+        functools.partial(train_step, model, voxel, FLAGS.len_inpc, FLAGS.len_inpf),
         axis_name="batch",
         in_axes=(0, 0, 0, None),
         donate_argnums=(2,),
     )
 
-    render_pfn = utils.get_render_pfn(model, randomized=FLAGS.randomized)
+    render_pfn = jax.pmap(
+        functools.partial(render_fn, model, voxel, FLAGS.len_inpc*2, FLAGS.len_inpf*2),
+        axis_name="batch",
+        in_axes=(None, None, None, 0),  # Only distribute the data input.
+        donate_argnums=(3,),
+    )
 
     # Compiling to the CPU because it's faster and more accurate.
     ssim_fn = jax.jit(functools.partial(utils.compute_ssim, max_val=1.0), backend="cpu")
@@ -190,11 +217,15 @@ def main(unused_argv):
 
 
     reset_timer = True
-    for step, batch in zip(range(init_step, FLAGS.max_steps + 1), pdataset):
+    for step, batch in zip(range(init_step, max_steps + 1), pdataset):
         if reset_timer:
             t_loop_start = time.time()
             reset_timer = False
-        lr = learning_rate_fn(step)
+        if FLAGS.small_lr_at_first and step <= 1000:
+            lr = FLAGS.lr_init / 10.
+        else:
+            lr = learning_rate_fn(step)
+
         state, stats, keys = train_pstep(keys, state, batch, lr)
         if jax.host_id() == 0:
             stats_trace.append(stats)
@@ -215,6 +246,9 @@ def main(unused_argv):
                 summary_writer.scalar("weight_l2", stats.weight_l2[0], step)
                 avg_loss = np.mean(np.concatenate([s.loss for s in stats_trace]))
                 avg_psnr = np.mean(np.concatenate([s.psnr for s in stats_trace]))
+                ### Vax
+                len_c = max(len_c, int(np.max(np.concatenate([s.len_c for s in stats_trace]))))
+                len_f = max(len_f, int(np.max(np.concatenate([s.len_f for s in stats_trace]))))
                 stats_trace = []
                 summary_writer.scalar("train_avg_loss", avg_loss, step)
                 summary_writer.scalar("train_avg_psnr", avg_psnr, step)
@@ -227,10 +261,11 @@ def main(unused_argv):
                 precision = int(np.ceil(np.log10(FLAGS.max_steps))) + 1
                 print(
                     ("{:" + "{:d}".format(precision) + "d}").format(step)
-                    + f"/{FLAGS.max_steps:d}: "
+                    + f"/{max_steps:d}: "
                     + f"i_loss={stats.loss[0]:0.4f}, "
                     + f"avg_loss={avg_loss:0.4f}, "
                     + f"weight_l2={stats.weight_l2[0]:0.2e}, "
+                    + f"len_c={len_c}, " + f"len_f={len_f}, "
                     + f"lr={lr:0.2e}, "
                     + f"{rays_per_sec:0.0f} rays/sec"
                 )
@@ -308,6 +343,30 @@ def main(unused_argv):
         checkpoints.save_checkpoint(
             FLAGS.train_dir, state, int(FLAGS.max_steps), keep=200
         )
+
+    ### Vax
+    if check:
+        import shutil
+        shutil.rmtree(FLAGS.train_dir)
+        os.makedirs(FLAGS.train_dir)
+        with open(os.path.join(FLAGS.train_dir, "len_inp.txt"), 'w') as f:
+            f.write(str(int(len_c)) +" " + str(int(len_f)))
+
+
+def main(unused_argv):
+    ### Vax
+    if not FLAGS.voxel_dir == "":
+        if not os.path.exists(os.path.join(FLAGS.train_dir, "len_inp.txt")):
+            # check len_inpc
+            p = Process(target=train, args=(500,True))
+            p.start(); p.join()  # avoid memory leaks
+
+            # check len_inpf
+            if FLAGS.num_fine_samples > 0:
+                p = Process(target=train, args=(500,True))
+                p.start(); p.join()  # avoid memory leaks
+
+    train(FLAGS.max_steps)
 
 
 if __name__ == "__main__":

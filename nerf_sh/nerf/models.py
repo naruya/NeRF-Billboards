@@ -76,6 +76,7 @@ class NerfModel(nn.Module):
     rgb_activation: Callable[Ellipsis, Any]  # Output RGB activation.
     sigma_activation: Callable[Ellipsis, Any]  # Output sigma activation.
     legacy_posenc_order: bool  # Keep the same ordering as the original tf code.
+    use_vax: bool  # If True, use Vax.
 
     def setup(self):
         # Construct the "coarse" MLP. Weird name is for
@@ -219,7 +220,7 @@ class NerfModel(nn.Module):
         sigma = self.sigma_activation(raw_sigma)
         return rgb, sigma
 
-    def __call__(self, rng_0, rng_1, rays, randomized):
+    def __call__(self, rng_0, rng_1, rays, voxel, len_inpc, len_inpf, randomized):
         """Nerf Model.
 
         Args:
@@ -247,6 +248,14 @@ class NerfModel(nn.Module):
         batch_size, num_samples = samples.shape[:-1]
         samples = samples.reshape(-1, 3)
 
+        if self.use_vax:
+            pts = digitize(samples, self.near, self.far, voxel.shape[0])
+            mask = voxel[pts[..., 0], pts[..., 1], pts[..., 2]].squeeze()
+            len_c = jnp.sum(mask)
+            ind_inp, ind_bak = jnp.split(jnp.argsort(mask)[::-1], [len_inpc])
+        else:
+            len_c = len(samples)
+
         samples_enc = model_utils.posenc(
             samples,
             self.min_deg_point,
@@ -264,11 +273,23 @@ class NerfModel(nn.Module):
             )
             viewdirs_enc = jnp.tile(viewdirs_enc_[:, None, :], (1, num_samples, 1))
             viewdirs_enc =  viewdirs_enc.reshape(batch_size * num_samples, -1)
-            raw_rgb, raw_sigma = self.MLP_0(samples_enc, viewdirs_enc)
+            if self.use_vax:
+                raw_rgb, raw_sigma = self.MLP_0(samples_enc[ind_inp], viewdirs_enc[ind_inp])
+            else:
+                raw_rgb, raw_sigma = self.MLP_0(samples_enc, viewdirs_enc)
         else:
-            raw_rgb, raw_sigma = self.MLP_0(samples_enc)
+            if self.use_vax:
+                raw_rgb, raw_sigma = self.MLP_0(samples_enc[ind_inp])
+            else:
+                raw_rgb, raw_sigma = self.MLP_0(samples_enc)
 
-        raw_rgb = raw_rgb.reshape(batch_size, num_samples, 3)
+        if self.use_vax:
+            ind = jnp.argsort(jnp.concatenate([ind_inp, ind_bak]))
+            len_pad = batch_size * num_samples - len_inpc
+            raw_rgb = jnp.vstack([raw_rgb, jnp.zeros([len_pad, raw_rgb.shape[-1]])])[ind] * mask[:, None]
+            raw_sigma = jnp.vstack([raw_sigma, jnp.zeros([len_pad, 1])])[ind] * mask[:, None]
+
+        raw_rgb = raw_rgb.reshape(batch_size, num_samples, raw_rgb.shape[-1])
         raw_sigma = raw_sigma.reshape(batch_size, num_samples, 1)
 
         # Add noises to regularize the density predictions if needed
@@ -326,6 +347,14 @@ class NerfModel(nn.Module):
             batch_size, num_samples = samples.shape[:-1]
             samples = samples.reshape(-1, 3)
 
+            if self.use_vax:
+                pts = digitize(samples, self.near, self.far, voxel.shape[0])
+                mask = voxel[pts[..., 0], pts[..., 1], pts[..., 2]].squeeze()
+                len_f = jnp.sum(mask)
+                ind_inp, ind_bak = jnp.split(jnp.argsort(mask)[::-1], [len_inpf])
+            else:
+                len_f = len(samples)
+
             samples_enc = model_utils.posenc(
                 samples,
                 self.min_deg_point,
@@ -336,11 +365,23 @@ class NerfModel(nn.Module):
             if self.use_viewdirs:
                 viewdirs_enc = jnp.tile(viewdirs_enc_[:, None, :], (1, num_samples, 1))
                 viewdirs_enc =  viewdirs_enc.reshape(batch_size * num_samples, -1)
-                raw_rgb, raw_sigma = self.MLP_1(samples_enc, viewdirs_enc)
+                if self.use_vax:
+                    raw_rgb, raw_sigma = self.MLP_1(samples_enc[ind_inp], viewdirs_enc[ind_inp])
+                else:
+                    raw_rgb, raw_sigma = self.MLP_1(samples_enc, viewdirs_enc)
             else:
-                raw_rgb, raw_sigma = self.MLP_1(samples_enc)
+                if self.use_vax:
+                    raw_rgb, raw_sigma = self.MLP_0(samples_enc[ind_inp])
+                else:
+                    raw_rgb, raw_sigma = self.MLP_0(samples_enc)
 
-            raw_rgb = raw_rgb.reshape(batch_size, num_samples, 3)
+            if self.use_vax:
+                ind = jnp.argsort(jnp.concatenate([ind_inp, ind_bak]))
+                len_pad = batch_size * num_samples - len_inpf
+                raw_rgb = jnp.vstack([raw_rgb, jnp.zeros([len_pad, raw_rgb.shape[-1]])])[ind] * mask[:, None]
+                raw_sigma = jnp.vstack([raw_sigma, jnp.zeros([len_pad, 1])])[ind] * mask[:, None]
+
+            raw_rgb = raw_rgb.reshape(batch_size, num_samples, raw_rgb.shape[-1])
             raw_sigma = raw_sigma.reshape(batch_size, num_samples, 1)
 
             key, rng_1 = random.split(rng_1)
@@ -373,7 +414,18 @@ class NerfModel(nn.Module):
                 white_bkgd=self.white_bkgd,
             )
             ret.append((comp_rgb, disp, acc))
-        return ret
+        else:
+            len_f = 0
+
+        if self.use_vax:
+            aux = (len_c, len_f)
+        else:
+            aux = (0, 0)
+        return ret, aux
+
+
+def digitize(p, near, far, size):
+    return jnp.digitize(p + (near + far) / 2., jnp.linspace(near, far, size-1))
 
 
 def construct_nerf(key, args):
@@ -447,6 +499,7 @@ def construct_nerf(key, args):
         rgb_activation=rgb_activation,
         sigma_activation=sigma_activation,
         legacy_posenc_order=args.legacy_posenc_order,
+        use_vax=args.voxel_dir != ""
     )
     key1, key = random.split(key)
     init_variables = model.init(

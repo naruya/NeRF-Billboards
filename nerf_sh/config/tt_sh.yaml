@@ -14,3 +14,5 @@ near: 0.0
 far: 4.0
 sparsity_radius: 5.0
 sparsity_length: 0.2
+
+chunk: 1000

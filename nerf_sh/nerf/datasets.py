@@ -136,7 +136,7 @@ class Dataset(threading.Thread):
                 lambda r: r.reshape([-1, r.shape[-1]]), self.rays
             )
         else:
-            self.images = self.images.reshape([-1, self.resolution, 3])
+            self.images = self.images.reshape([-1, self.resolution, args.num_rgb_channels])
             self.rays = utils.namedtuple_map(
                 lambda r: r.reshape([-1, self.resolution, r.shape[-1]]), self.rays
             )
@@ -216,7 +216,9 @@ class Blender(Dataset):
                         "set.".format(args.factor)
                     )
             cams.append(frame["transform_matrix"])
-            if args.white_bkgd:
+            if args.alpha_bkgd:
+                pass
+            elif args.white_bkgd:
                 mask = image[..., -1:]
                 image = image[..., :3] * mask + (1.0 - mask)
             else:
