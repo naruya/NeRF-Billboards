@@ -81,10 +81,11 @@ def restore_model_state_from_jaxnerf(args, model):
                 ckpt_dict["MLP_0"][f"{from_name}"]["kernel"].T
             state_dict[f"MLP_0.{to_name}.bias"] = \
                 ckpt_dict["MLP_0"][f"{from_name}"]["bias"]
-            state_dict[f"MLP_1.{to_name}.weight"] = \
-                ckpt_dict["MLP_1"][f"{from_name}"]["kernel"].T
-            state_dict[f"MLP_1.{to_name}.bias"] = \
-                ckpt_dict["MLP_1"][f"{from_name}"]["bias"]
+            if "MLP_1" in ckpt_dict.keys():
+                state_dict[f"MLP_1.{to_name}.weight"] = \
+                    ckpt_dict["MLP_1"][f"{from_name}"]["kernel"].T
+                state_dict[f"MLP_1.{to_name}.bias"] = \
+                    ckpt_dict["MLP_1"][f"{from_name}"]["bias"]
             pass
 
         # init all layers
@@ -181,18 +182,20 @@ class NerfModel(nn.Module):
             num_sigma_channels = self.num_sigma_channels,
             input_dim=3 * (1 + 2 * (self.max_deg_point - self.min_deg_point)),
             condition_dim=3 * (1 + 2 * self.deg_view) if self.use_viewdirs else 0)
+
         # Construct the "fine" MLP.
-        self.MLP_1 = model_utils.MLP(
-            net_depth = self.net_depth,
-            net_width = self.net_width,
-            net_depth_condition = self.net_depth_condition,
-            net_width_condition = self.net_width_condition,
-            net_activation = self.net_activation,
-            skip_layer = self.skip_layer,
-            num_rgb_channels = self.num_rgb_channels,
-            num_sigma_channels = self.num_sigma_channels,
-            input_dim=3 * (1 + 2 * (self.max_deg_point - self.min_deg_point)),
-            condition_dim=3 * (1 + 2 * self.deg_view) if self.use_viewdirs else 0)
+        if self.num_fine_samples > 0:
+            self.MLP_1 = model_utils.MLP(
+                net_depth = self.net_depth,
+                net_width = self.net_width,
+                net_depth_condition = self.net_depth_condition,
+                net_width_condition = self.net_width_condition,
+                net_activation = self.net_activation,
+                skip_layer = self.skip_layer,
+                num_rgb_channels = self.num_rgb_channels,
+                num_sigma_channels = self.num_sigma_channels,
+                input_dim=3 * (1 + 2 * (self.max_deg_point - self.min_deg_point)),
+                condition_dim=3 * (1 + 2 * self.deg_view) if self.use_viewdirs else 0)
 
         # Construct learnable variables for spherical gaussians.
         if self.sg_dim > 0:
