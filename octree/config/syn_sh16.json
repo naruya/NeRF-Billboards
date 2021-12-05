@@ -1,12 +1,12 @@
 {
-"data_root": "./data/NeRF/nerf_synthetic/",
+"data_root": "./data/nerf_synthetic/",
 "train_root": "./data/Plenoctree/checkpoints/syn_sh16/",
 "scenes": ["chair", "drums", "ficus", "hotdog", "lego", "ship"],
 "scene_tasks": [{
         "octree_name": "",
         "train_dir": "{%}",
         "data_dir": "{%}",
-        "config": "nerf_sh/config/blender",
+        "config": "nerf_sh/config/blender_sh",
         "extr_flags": [
             "--autoscale",
             "--scale_alpha_thresh", "0.1",
