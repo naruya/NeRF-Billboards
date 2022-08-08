@@ -20,6 +20,7 @@ public class ControlBillboard : MonoBehaviour
 
     public byte[] img = new byte[8];
     public Texture2D texture;
+    public int mode = 0;
 
     // Start is called before the first frame update
     void Start()
@@ -38,6 +39,7 @@ public class ControlBillboard : MonoBehaviour
             ((System.Net.IPEndPoint)tcp.Client.LocalEndPoint).Port);
 
         ns = tcp.GetStream();
+        // https://stackoverflow.com/questions/49315959/what-causes-unity-memory-leaks
         texture = new Texture2D(1, 1);
     }
 
@@ -45,6 +47,10 @@ public class ControlBillboard : MonoBehaviour
     {
         try
         {
+            if (Input.GetKey("m"))
+            {
+                mode = (mode + 1) % 3;
+            }
             this.transform.LookAt(mainCamera.transform);
             this.transform.Rotate(new Vector3(90, 0, 0));
 
@@ -53,7 +59,7 @@ public class ControlBillboard : MonoBehaviour
             // pose
             relativeQua = transform.rotation;
 
-            float[] tmp = new float[7];
+            float[] tmp = new float[7+1];
             tmp[0] = relativePos.z;
             tmp[1] = -relativePos.x;
             tmp[2] = relativePos.y;
@@ -61,6 +67,7 @@ public class ControlBillboard : MonoBehaviour
             tmp[4] = relativeQua.z;
             tmp[5] = -relativeQua.x;
             tmp[6] = relativeQua.y;
+            tmp[7] = (float)mode;
 
             string str = "";
             for (int i = 0; i < tmp.Length; i++)
