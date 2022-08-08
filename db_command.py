@@ -77,8 +77,8 @@ def main(unused_argv):
                 while True:
                     try:
                         data = conn.recv(1024)
-                    except OSError:
-                        time.sleep(1); continue
+                    except OSError as e:
+                        print(e); time.sleep(1); continue
                     if not data:
                         print("no data"); break
                     try:

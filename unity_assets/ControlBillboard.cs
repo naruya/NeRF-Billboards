@@ -19,6 +19,7 @@ public class ControlBillboard : MonoBehaviour
     Camera mainCamera;
 
     public byte[] img = new byte[8];
+    public Texture2D texture;
 
     // Start is called before the first frame update
     void Start()
@@ -37,6 +38,7 @@ public class ControlBillboard : MonoBehaviour
             ((System.Net.IPEndPoint)tcp.Client.LocalEndPoint).Port);
 
         ns = tcp.GetStream();
+        texture = new Texture2D(1, 1);
     }
 
     void FixedUpdate()
@@ -102,7 +104,7 @@ public class ControlBillboard : MonoBehaviour
             ms.Close();
 
             byte[] readBinary = img;
-            Texture2D texture = new Texture2D(1, 1);
+            // Texture2D texture = new Texture2D(1, 1);
             texture.LoadImage(readBinary);
 
             if (texture.width % 64 == 0 || texture.width % 100 == 0)
