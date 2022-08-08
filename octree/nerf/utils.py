@@ -468,12 +468,14 @@ def eval_octree(t, dataset, args, want_lpips=True, want_frames=False):
     out_frames = []
     for idx in tqdm(range(dataset.size)):
         c2w = torch.from_numpy(dataset.camtoworlds[idx]).float().to(device)
+        c2w[:3, 3] = c2w[:3, 3] / 1.5
         im_gt_ten = torch.from_numpy(dataset.images[idx]).float().to(device)
 
         im = r.render_persp(
             c2w, width=w, height=h, fx=focal, fast=not args.no_early_stop)
         im.clamp_(0.0, 1.0)
 
+        im = im[...,:3]
         mse = ((im - im_gt_ten) ** 2).mean()
         psnr = compute_psnr(mse).mean()
         ssim = compute_ssim(im, im_gt_ten, max_val=1.0).mean()
@@ -487,8 +489,8 @@ def eval_octree(t, dataset, args, want_lpips=True, want_frames=False):
 
         if want_frames:
             im = im.cpu()
-            # vis = np.hstack((im_gt_ten.cpu().numpy(), im.cpu().numpy()))
-            vis = im.cpu().numpy()  # for lpips calculation
+            vis = np.hstack((im_gt_ten.cpu().numpy(), im.cpu().numpy()))
+            # vis = im.cpu().numpy()  # for lpips calculation
             vis = (vis * 255).astype(np.uint8)
             out_frames.append(vis)
 
