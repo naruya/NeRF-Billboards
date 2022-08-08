@@ -27,11 +27,15 @@ flags.DEFINE_integer("port", 6006, "Port number for tcp")
 config.parse_flags_with_absl()
 
 
-def f_frame(img):
+def f_frame(img, mode):
     img = (img.clamp_(0.0, 1.0).cpu().numpy() * 255).astype(np.uint8)
-    # img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-    img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
-    # img[0], img[-1], img[:,0], img[:,-1] = 255, 255, 255, 255
+    if mode == 0:
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
+    elif mode == 1:
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
+        img[0], img[-1], img[:,0], img[:,-1] = 255, 255, 255, 255
+    elif mode == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
     return img
 
 
@@ -86,13 +90,14 @@ def main(unused_argv):
                         decode_data = [float(s) for s in decode_data]
                     except ValueError as e:
                         print(e); break
-                    if not len(decode_data) == 7:
+                    if not len(decode_data) in [7,8]:
                         print("invalid data"); break
 
                     xyz = np.array(decode_data[:3])
-                    quat = np.array(decode_data[3:])
+                    quat = np.array(decode_data[3:7])
+                    mode = int(decode_data[7])
                     dist = np.sum(np.power(xyz, 2)) ** 0.5
-                    print(np.round(dist, 3), np.round(xyz, 3), np.round(quat, 3))
+                    print(mode, np.round(dist, 3), np.round(xyz, 3), np.round(quat, 3))
 
                     c2w = xyzquat2c2w(xyz, quat)
                     ### TODO
@@ -106,7 +111,7 @@ def main(unused_argv):
                         c2w = torch.from_numpy(c2w).float()
                         img = r.render_persp(c2w.to(device), size, size,
                                              fx=focal*(dist/FLAGS.dist), fast=True)
-                    img = f_frame(img)
+                    img = f_frame(img, mode)
 
                     view = np.zeros([6])  # dummy. not used
                     view = ("{} " * 6)[:-1].format(*view).encode()
