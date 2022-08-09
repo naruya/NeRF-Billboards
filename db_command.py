@@ -20,9 +20,11 @@ from db_utils import *
 FLAGS = flags.FLAGS
 utils.define_flags()
 flags.DEFINE_string("input", "./tree.npz", "Input octree npz")
+flags.DEFINE_string("type", "real", "Input octree npz")
 flags.DEFINE_float("trim", 0.8, "trim size")
 flags.DEFINE_float("dist", 1.2, "default dist in dataset")
 flags.DEFINE_integer("size", 256, "render size")
+flags.DEFINE_float("zoom", 0.5, "zoom in/out")
 flags.DEFINE_integer("port", 6006, "Port number for tcp")
 config.parse_flags_with_absl()
 
@@ -93,7 +95,7 @@ def main(unused_argv):
                     if not len(decode_data) in [7,8]:
                         print("invalid data"); break
 
-                    xyz = np.array(decode_data[:3])
+                    xyz = np.array(decode_data[:3]) * FLAGS.zoom
                     quat = np.array(decode_data[3:7])
                     mode = int(decode_data[7])
                     dist = np.sum(np.power(xyz, 2)) ** 0.5
@@ -101,7 +103,7 @@ def main(unused_argv):
 
                     c2w = xyzquat2c2w(xyz, quat)
                     ### TODO
-                    if 'IMG_' in FLAGS.input:
+                    if FLAGS.type == 'real':
                         c2w[:3,3] = Rotation.from_euler(
                             'xyz', (90,-90,0), degrees=True).as_matrix().dot(c2w[:3,3])
                         c2w[:3,:3] = Rotation.from_euler(

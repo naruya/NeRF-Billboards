@@ -81,7 +81,7 @@ def speedtest(r, dataset, save_path=None, device=0):
         im = (im.clamp_(0.0, 1.0).cpu().numpy() * 255).astype(np.uint8)
         if idx==0: plt.imshow(im); plt.show()
         if save_path: frames.append(im)
-    if save_path: imageio.mimwrite(save_path, frames)
+    if save_path: imageio.mimwrite(save_path, frames, fps=30, macro_block_size=8)
 
 
 def lighten_tree(t, thresh, value=0):
