@@ -63,19 +63,22 @@ def main(unused_argv):
     r = svox.VolumeRenderer(tree, step_size=FLAGS.renderer_step_size, ndc=None)
     print("I'm Ready!")
 
-    # https://docs.python.org/ja/3/library/socket.html
-    # https://docs.python.org/ja/3/library/socket.html#example
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    def connect(s):
         while True:
             try:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 s.bind(('0.0.0.0', FLAGS.port))
                 s.listen(1)
                 conn, addr = s.accept()
-                print(addr)
+                print(addr); break
             except OSError as e:
                 print(e); time.sleep(1); continue
-            break
+        return conn
+
+    # https://docs.python.org/ja/3/library/socket.html
+    # https://docs.python.org/ja/3/library/socket.html#example
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        conn = connect(s)
 
         while True:
             with conn:
@@ -86,16 +89,16 @@ def main(unused_argv):
                     try:
                         data = conn.recv(1024)
                     except OSError as e:
-                        print(e); time.sleep(1); continue
+                        print(e); time.sleep(1); del conn; conn = connect(s); continue
                     if not data:
-                        print("no data"); break
+                        print("no data"); del conn; conn = connect(s); continue
                     try:
                         decode_data = data.decode("utf-8").split(",")
                         decode_data = [float(s) for s in decode_data]
                     except ValueError as e:
                         print(e); break
                     if not len(decode_data) in [7,8]:
-                        print("invalid data"); break
+                        print("invalid data"); del conn; conn = connect(s); continue
 
                     # diff check!
                     diff = np.sum(np.abs(last_data[:len(decode_data)] - decode_data))
