@@ -102,16 +102,16 @@ def main(unused_argv):
 
                     # diff check!
                     diff = np.sum(np.abs(last_data[:len(decode_data)] - decode_data))
-                    last_data[:len(decode_data)] = decode_data
                     if diff < 1e-5 and img_enc is not None and view_enc is not None:
                         conn.sendall(view_enc + img_enc)
                         continue
 
+                    last_data[:len(decode_data)] = decode_data
                     xyz = np.array(decode_data[:3]) * FLAGS.zoom
                     quat = np.array(decode_data[3:7])
                     mode = int(decode_data[7])
                     dist = np.sum(np.power(xyz, 2)) ** 0.5
-                    print(mode, np.round(dist, 3), np.round(xyz, 3), np.round(quat, 3))
+                    print(mode, np.round(dist, 2), np.round(xyz, 2), np.round(quat, 2))
 
                     c2w = xyzquat2c2w(xyz, quat)
                     ### TODO
