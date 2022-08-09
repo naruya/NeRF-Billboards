@@ -80,6 +80,8 @@ def main(unused_argv):
         while True:
             with conn:
                 time.sleep(0.03)
+                last_data = np.zeros(20)
+                img_enc, view_enc = None, None
                 while True:
                     try:
                         data = conn.recv(1024)
@@ -94,6 +96,13 @@ def main(unused_argv):
                         print(e); break
                     if not len(decode_data) in [7,8]:
                         print("invalid data"); break
+
+                    # diff check!
+                    diff = np.sum(np.abs(last_data[:len(decode_data)] - decode_data))
+                    last_data[:len(decode_data)] = decode_data
+                    if diff < 1e-5 and img_enc is not None and view_enc is not None:
+                        conn.sendall(view_enc + img_enc)
+                        continue
 
                     xyz = np.array(decode_data[:3]) * FLAGS.zoom
                     quat = np.array(decode_data[3:7])
@@ -117,9 +126,9 @@ def main(unused_argv):
 
                     view = np.zeros([6])  # dummy. not used
                     view = ("{} " * 6)[:-1].format(*view).encode()
-                    img = cv2.imencode(".png", img)[1].tobytes()
-                    view = "{:04}    ".format(len(view)).encode() + view
-                    conn.sendall(view + img)
+                    img_enc = cv2.imencode(".png", img)[1].tobytes()
+                    view_enc = "{:04}    ".format(len(view)).encode() + view
+                    conn.sendall(view_enc + img_enc)
 
 
 if __name__ == "__main__":
