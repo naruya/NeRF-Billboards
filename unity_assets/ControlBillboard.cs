@@ -20,18 +20,14 @@ public class ControlBillboard : MonoBehaviour
 
     public byte[] img = new byte[8];
     public Texture2D texture;
+    public Texture2D texture_last;
     public int mode = 0;
 
-    // Start is called before the first frame update
-    void Start()
+    void Startfn()
     {
-        //script = GameObject.Find("Main Camera").GetComponent<CameraControl>();
-        mainCamera = GameObject.Find("Main Camera").GetComponent<Camera>();
-        string ipOrHost = "localhost";
-        int port = 26006;
+        int port = 36006;
 
-        tcp = new System.Net.Sockets.TcpClient(ipOrHost, port);
-        Debug.Log(tcp);
+        tcp = new System.Net.Sockets.TcpClient("localhost", port);
         Debug.Log("connected!" +
             ((System.Net.IPEndPoint)tcp.Client.RemoteEndPoint).Address + "," +
             ((System.Net.IPEndPoint)tcp.Client.RemoteEndPoint).Port + "," +
@@ -39,12 +35,26 @@ public class ControlBillboard : MonoBehaviour
             ((System.Net.IPEndPoint)tcp.Client.LocalEndPoint).Port);
 
         ns = tcp.GetStream();
+    }
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        //script = GameObject.Find("Main Camera").GetComponent<CameraControl>();
+        mainCamera = GameObject.Find("Main Camera").GetComponent<Camera>();
+
         // https://stackoverflow.com/questions/49315959/what-causes-unity-memory-leaks
         texture = new Texture2D(1, 1);
+
+        // Startfn();
     }
 
     void FixedUpdate()
     {
+        if (tcp == null)
+        {
+           Startfn();
+        }
         try
         {
             if (Input.GetKey("m"))
@@ -110,15 +120,15 @@ public class ControlBillboard : MonoBehaviour
 
             ms.Close();
 
-            byte[] readBinary = img;
-            // Texture2D texture = new Texture2D(1, 1);
-            texture.LoadImage(readBinary);
+            Debug.Log(img.Length);
 
-            if (texture.width % 64 == 0 || texture.width % 100 == 0)
+            if (img.Length != 4057)
             {
-                Debug.Log(texture.width);
-                GetComponent<Renderer>().material.mainTexture = texture;
+                Debug.Log(texture.width.ToString() + ", " + texture.height);
+                texture.LoadImage(img);
+                texture_last = texture;
             }
+
         }
         catch (FormatException e)
         {
@@ -132,5 +142,6 @@ public class ControlBillboard : MonoBehaviour
         {
             Debug.Log(e);
         }
+        GetComponent<Renderer>().material.mainTexture = texture_last;
     }
 }
