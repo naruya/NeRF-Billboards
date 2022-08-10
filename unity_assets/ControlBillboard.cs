@@ -120,11 +120,8 @@ public class ControlBillboard : MonoBehaviour
 
             ms.Close();
 
-            Debug.Log(img.Length);
-
             if (img.Length != 4057)
             {
-                Debug.Log(texture.width.ToString() + ", " + texture.height);
                 texture.LoadImage(img);
                 texture_last = texture;
             }
