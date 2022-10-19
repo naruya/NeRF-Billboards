@@ -24,47 +24,47 @@ public class ControlCamera : MonoBehaviour
             {
                 transform.Translate(0f, 0f, dt); // front
             }
-            else if (Input.GetKey("s"))
+            if (Input.GetKey("s"))
             {
                 transform.Translate(0f, 0f, -dt); // back
             }
-            else if (Input.GetKey("d"))
+            if (Input.GetKey("d"))
             {
                 transform.Translate(dt, 0f, 0f); // right
             }
-            else if (Input.GetKey("a"))
+            if (Input.GetKey("a"))
             {
                 transform.Translate(-dt, 0f, 0f); // left
             }
-            else if (Input.GetKey("space"))
+            if (Input.GetKey("r"))
             {
                 transform.Translate(0f, dt, 0f); // top
             }
-            else if (Input.GetKey("return"))
+            if (Input.GetKey("f"))
             {
                 transform.Translate(0f, -dt, 0f); // botom
             }
-            else if (Input.GetKey("q"))
+            if (Input.GetKey("q"))
             {
                 transform.Rotate(0f, dr, 0f); // yaw++
             }
-            else if (Input.GetKey("e"))
+            if (Input.GetKey("e"))
             {
                 transform.Rotate(0f, -dr, 0f); // yaw--
             }
-            else if (Input.GetKey("z"))
+            if (Input.GetKey("z"))
             {
                 transform.Rotate(dr, 0f, 0f); // pitch++
             }
-            else if (Input.GetKey("x"))
+            if (Input.GetKey("x"))
             {
                 transform.Rotate(-dr, 0f, 0f); // pitch--
             }
-            else if (Input.GetKey("c"))
+            if (Input.GetKey("c"))
             {
                 transform.Rotate(0f, 0f, dr); // roll++
             }
-            else if (Input.GetKey("v"))
+            if (Input.GetKey("v"))
             {
                 transform.Rotate(0f, 0f, -dr); // roll--
             }
