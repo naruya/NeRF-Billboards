@@ -53,7 +53,8 @@ public class ControlBillboard : MonoBehaviour
     {
         if (tcp == null)
         {
-           Startfn();
+           Debug.Log("not connected");
+           // Startfn();
         }
         try
         {
