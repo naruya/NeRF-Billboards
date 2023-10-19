@@ -46,7 +46,7 @@ public class ControlBillboard : MonoBehaviour
         // https://stackoverflow.com/questions/49315959/what-causes-unity-memory-leaks
         texture = new Texture2D(1, 1);
 
-        // Startfn();
+        Startfn();
     }
 
     void FixedUpdate()
